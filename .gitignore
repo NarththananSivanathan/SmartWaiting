@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Modèles ML (trop lourds pour git — régénérables avec 03_train_model.py)
+SmartWaiting-IA/models/*.pkl
+
+# Données générées
+SmartWaiting-IA/data/visualisation_dataset.png
+SmartWaiting-IA/data/predictions_vs_realite.png
+SmartWaiting-IoT-Capteur/data/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Variables d'environnement
+.env
+*.env.local
+
+# Docker
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pytest
+.pytest_cache/

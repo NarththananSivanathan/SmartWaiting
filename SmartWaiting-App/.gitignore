@@ -1,0 +1,21 @@
+# Env
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+frontend/.next/
+
+# Docker
+mysql_data/
+
+# IDE
+.idea/
+.vscode/
