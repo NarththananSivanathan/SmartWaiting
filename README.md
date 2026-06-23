@@ -67,7 +67,7 @@ docker compose version  # Docker Compose version 2.x ou supérieur
 
 ```bash
 # 1. Cloner le projet
-git clone <url-du-repo>
+git clone https://github.com/NarththananSivanathan/SmartWaiting
 cd SmartWaiting
 
 # 2. Créer le fichier d'environnement
