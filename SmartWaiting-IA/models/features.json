@@ -1,0 +1,32 @@
+{
+  "features": [
+    "heure_decimal",
+    "minute_arrivee",
+    "mois",
+    "jour_encode",
+    "saison_encode",
+    "type_encode"
+  ],
+  "types_valides": [
+    "Autre",
+    "Bilan de santé",
+    "Consultation de suivi",
+    "Consultation générale",
+    "Urgence",
+    "Vaccination"
+  ],
+  "jours_valides": [
+    "Jeudi",
+    "Lundi",
+    "Mardi",
+    "Mercredi",
+    "Samedi",
+    "Vendredi"
+  ],
+  "saisons_valides": [
+    "Automne",
+    "Hiver",
+    "Printemps",
+    "Été"
+  ]
+}

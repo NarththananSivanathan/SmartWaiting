@@ -1,0 +1,166 @@
+name: SmartWaiting
+
+services:
+
+  # ─────────────────────────────────────────
+  # BASE DE DONNÉES
+  # ─────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: SmartWaiting-BDD
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: smartwaiting
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./SmartWaiting-App/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - smartwaiting_net
+
+  # ─────────────────────────────────────────
+  # INTELLIGENCE ARTIFICIELLE (Flask - port 5000)
+  # Prédit le temps d'attente via un modèle ML (scikit-learn)
+  # ─────────────────────────────────────────
+  ia:
+    build:
+      context: ./SmartWaiting-IA
+      dockerfile: Dockerfile
+    container_name: SmartWaiting-IA
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Paris
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - smartwaiting_net
+
+  # ─────────────────────────────────────────
+  # DÉTECTION VISUELLE YOLO (FastAPI - port 8001)
+  # Analyse les images de caméra pour compter les places occupées
+  # ─────────────────────────────────────────
+  yolo:
+    build:
+      context: ./SmartWaiting-YOLO
+      dockerfile: Dockerfile
+    container_name: SmartWaiting-YOLO
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/sante')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - smartwaiting_net
+
+  # ─────────────────────────────────────────
+  # BACKEND API (FastAPI - port 8000)
+  # Cœur de l'application : consultations, occupancy, connexion IA+YOLO
+  # ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./SmartWaiting-App/backend
+      dockerfile: Dockerfile
+    container_name: SmartWaiting-Backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-user}:${MYSQL_PASSWORD:-password}@mysql:3306/smartwaiting
+      SECRET_KEY: ${SECRET_KEY:-changeme-in-production}
+      IA_API_URL: http://ia:5000
+      YOLO_API_URL: http://yolo:8001
+      TZ: Europe/Paris
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ia:
+        condition: service_healthy
+      yolo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - smartwaiting_net
+
+  # ─────────────────────────────────────────
+  # SIMULATEUR IoT (capteur d'occupation)
+  # Génère des données d'occupation toutes les INTERVAL secondes
+  # et les envoie au backend
+  # ─────────────────────────────────────────
+  iot:
+    build:
+      context: ./SmartWaiting-IoT-Capteur
+      dockerfile: Dockerfile
+    container_name: SmartWaiting-IoT
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000/api/occupancy/
+      INTERVAL: ${IOT_INTERVAL:-30}
+      TZ: Europe/Paris
+    volumes:
+      - iot_data:/app/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - smartwaiting_net
+
+  # ─────────────────────────────────────────
+  # FRONTEND (Next.js - port 3000)
+  # Interface utilisateur React/TypeScript
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./SmartWaiting-App/frontend
+      dockerfile: Dockerfile
+    container_name: SmartWaiting-Frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - smartwaiting_net
+
+# ─────────────────────────────────────────
+# VOLUMES PERSISTANTS
+# ─────────────────────────────────────────
+volumes:
+  mysql_data:
+  iot_data:
+
+# ─────────────────────────────────────────
+# RÉSEAU INTERNE
+# Tous les services communiquent par leur nom de service
+# ex : backend appelle http://ia:5000 ou http://mysql:3306
+# ─────────────────────────────────────────
+networks:
+  smartwaiting_net:
+    driver: bridge

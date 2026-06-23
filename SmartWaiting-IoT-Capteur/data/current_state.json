@@ -1,0 +1,9 @@
+{
+    "room_id": "salle_attente_1",
+    "timestamp": "2026-06-17 16:18:13",
+    "total_chairs": 25,
+    "occupied_chairs": 12,
+    "free_chairs": 13,
+    "occupancy_rate": 48.0,
+    "patient_position": 13
+}
