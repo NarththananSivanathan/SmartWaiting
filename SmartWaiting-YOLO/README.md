@@ -10,6 +10,7 @@ Service de détection visuelle. Reçoit une image de la salle d'attente, détect
 SmartWaiting-YOLO/
 ├── api.py                       # API FastAPI — point d'entrée (port 8001)
 ├── image_occupancy_sensor.py    # Classe principale + usage en ligne de commande
+├── camera_occupancy_sensor.py   # Variante flux caméra en direct (optionnelle)
 ├── yolo_detection.py            # Interface avec la librairie ultralytics YOLO
 ├── occupancy_logic.py           # Géométrie pure : calcul des places occupées
 ├── requirements.txt
@@ -115,6 +116,64 @@ python image_occupancy_sensor.py \
 timestamp,occupied_count
 2026-06-23T08:00:00+00:00,3
 2026-06-23T08:10:00+00:00,7
+...
+```
+
+---
+
+## Service caméra (optionnel) — `camera_occupancy_sensor.py`
+
+Variante de `image_occupancy_sensor.py` pour un flux caméra **en direct** (webcam ou fichier vidéo) plutôt que des images statiques. Conservée à titre de référence au cas où une vraie caméra deviendrait disponible — ce n'est pas le script utilisé en production, qui repose sur l'API et des images.
+
+### Architecture
+
+```
+camera_occupancy_sensor.py
+  └── CapteurOccupationCamera
+        ├── detecter_personnes()  (yolo_detection.py)   ← même fonction que l'API
+        └── compter_places_occupees()  (occupancy_logic.py)  ← même fonction que l'API
+```
+
+### Classe `CapteurOccupationCamera`
+
+```python
+CapteurOccupationCamera(modele=None, chemin_modele="yolov8n.pt", confiance=0.4)
+```
+
+Mêmes paramètres que `CapteurOccupationImage`. Expose :
+
+- `analyser(image)` → `(places_occupees, boites_personnes)` — même API que `CapteurOccupationImage`, volontairement, pour rester cohérent entre les deux capteurs
+- `stream(capture_video, intervalle=1.0, duree=None, chemin_csv=None, afficher=False)` — boucle de capture + détection en continu, image par image
+
+### Usage en ligne de commande
+
+```bash
+python camera_occupancy_sensor.py \
+  --source 0 \
+  --interval 1 \
+  --csv occupation_camera.csv \
+  --duration 20
+```
+
+`--source 0` utilise la webcam par défaut de la machine (ou un chemin de fichier vidéo, ex. `--source video.mp4`). Sans caméra réelle, le script tourne en boucle indéfiniment jusqu'à Ctrl+C : `--duration` (en secondes) permet de l'arrêter proprement tout seul.
+
+### Options disponibles
+
+| Option | Défaut | Description |
+|--------|--------|-------------|
+| `--source` | `0` | Index caméra (0, 1...) ou chemin d'un fichier vidéo |
+| `--model` | `yolov8n.pt` | Modèle YOLO à utiliser |
+| `--conf` | `0.4` | Seuil de confiance (0–1) |
+| `--interval` | `1.0` | Secondes entre deux détections |
+| `--duration` | infini | Durée totale en secondes |
+| `--csv` | `occupation_camera.csv` | Fichier CSV de sortie |
+| `--show` | désactivé | Affiche une fenêtre vidéo (environnement graphique requis) |
+
+**Sortie CSV** (même format que la version image) :
+```
+timestamp,occupied_count
+2026-06-23T08:00:00+00:00,3
+2026-06-23T08:00:01+00:00,4
 ...
 ```
 
