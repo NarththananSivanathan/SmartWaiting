@@ -22,5 +22,5 @@ class OccupancyReading(Base):
     id = Column(Integer, primary_key=True, index=True)
     occupied_count = Column(Integer, nullable=False)
     patient_position = Column(Integer, nullable=True)
-    source = Column(String(20), nullable=False)  # "sensor" ou "yolo"
+    source = Column(String(20), nullable=False)  # "sensor", "camera", "yolo"
     timestamp = Column(DateTime, default=datetime.now)

@@ -23,12 +23,14 @@ code (par exemple avec la librairie "requests" en Python, ou "fetch" en
 JavaScript) plutot que depuis curl.
 """
 
+import os
+import tempfile
 from datetime import datetime, timezone
 from functools import lru_cache
 
 import numpy as np
 import cv2
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, UploadFile, File, Depends, Query
 
 from image_occupancy_sensor import CapteurOccupationImage
 
@@ -81,6 +83,80 @@ async def analyser_image(
         "occupied_count": places_occupees,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.post("/analyser-video")
+async def analyser_video(
+    video: UploadFile = File(...),
+    intervalle_frames: int = Query(default=30, ge=1, description="Analyser 1 frame sur N (ex: 30 = 1 frame/seconde a 30fps)"),
+    capteur: CapteurOccupationImage = Depends(obtenir_capteur),
+):
+    """
+    Recoit un fichier video (mp4, avi...), l'analyse frame par frame a
+    intervalle regulier avec YOLO, et retourne le detail par frame ainsi
+    que la moyenne globale du nombre de places occupees.
+
+    Reponse JSON :
+        {
+            "resultats": [
+                {"frame": 0, "temps_secondes": 0.0, "occupied_count": 3},
+                {"frame": 30, "temps_secondes": 1.0, "occupied_count": 4},
+                ...
+            ],
+            "moyenne_occupied": 3.5,
+            "nb_frames_analysees": 12,
+            "timestamp": "2026-06-24T10:00:00+00:00"
+        }
+    """
+    contenu = await video.read()
+
+    # On sauvegarde dans un fichier temporaire : cv2.VideoCapture a besoin
+    # d'un chemin de fichier, pas de donnees en memoire.
+    suffixe = os.path.splitext(video.filename or "video.mp4")[1] or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffixe, delete=False) as tmp:
+        tmp.write(contenu)
+        chemin_tmp = tmp.name
+
+    try:
+        cap = cv2.VideoCapture(chemin_tmp)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        resultats = []
+        numero_frame = 0
+
+        while True:
+            ok, image = cap.read()
+            if not ok:
+                break
+
+            if numero_frame % intervalle_frames == 0:
+                places_occupees, _ = capteur.analyser(image)
+                resultats.append({
+                    "frame": numero_frame,
+                    "temps_secondes": round(numero_frame / fps, 2),
+                    "occupied_count": places_occupees,
+                })
+
+            numero_frame += 1
+
+        cap.release()
+
+        if not resultats:
+            return {
+                "resultats": [],
+                "moyenne_occupied": 0,
+                "nb_frames_analysees": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        moyenne = round(sum(r["occupied_count"] for r in resultats) / len(resultats), 1)
+        return {
+            "resultats": resultats,
+            "moyenne_occupied": moyenne,
+            "nb_frames_analysees": len(resultats),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        os.unlink(chemin_tmp)
 
 
 @app.get("/sante")

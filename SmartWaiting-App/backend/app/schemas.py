@@ -39,6 +39,7 @@ class OccupancyInput(BaseModel):
     free_chairs: Optional[int] = None
     occupancy_rate: Optional[float] = None
     patient_position: Optional[int] = None
+    source: Optional[str] = None  # "sensor", "camera", "yolo" — "sensor" par défaut
 
 class OccupancyReadingResponse(ORMBase):
     id: int

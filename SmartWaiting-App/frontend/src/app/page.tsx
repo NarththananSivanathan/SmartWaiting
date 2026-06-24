@@ -73,9 +73,14 @@ export default function Home() {
     <div className="container">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
         <h1 style={{ margin: 0 }}>SmartWaiting — Consultations</h1>
-        <Link href="/attente" style={{ background: "#0070f3", color: "white", padding: "0.5rem 1.2rem", borderRadius: "6px", textDecoration: "none", fontSize: "0.95rem" }}>
-          Voir la salle d&apos;attente →
-        </Link>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Link href="/attente" style={{ background: "#0070f3", color: "white", padding: "0.5rem 1.2rem", borderRadius: "6px", textDecoration: "none", fontSize: "0.95rem" }}>
+            Voir la salle d&apos;attente →
+          </Link>
+          <Link href="/test" style={{ background: "#6b7280", color: "white", padding: "0.5rem 1.2rem", borderRadius: "6px", textDecoration: "none", fontSize: "0.95rem" }}>
+            Tests API
+          </Link>
+        </div>
       </div>
 
       <div className="card">

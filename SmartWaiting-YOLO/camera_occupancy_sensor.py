@@ -30,11 +30,33 @@ Usage:
 
 import argparse
 import csv
+import json
 import time
+import urllib.request
 from datetime import datetime, timezone
 
 from occupancy_logic import compter_places_occupees
 from yolo_detection import detecter_personnes
+
+
+def _envoyer_au_backend(backend_url, places_occupees):
+    """
+    Envoie le nombre de places occupees au backend SmartWaiting via HTTP POST.
+    Utilise uniquement la bibliotheque standard (urllib) pour eviter
+    d'ajouter une dependance supplementaire (requests, httpx...).
+    Les erreurs sont loguees mais ne font pas planter la boucle principale.
+    """
+    payload = json.dumps({
+        "occupied_chairs": places_occupees,
+        "source": "camera",
+    }).encode("utf-8")
+    url = f"{backend_url.rstrip('/')}/api/occupancy/"
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception as e:
+        print(f"[backend] Erreur lors de l'envoi : {e}")
 
 
 class CapteurOccupationCamera:
@@ -82,7 +104,7 @@ class CapteurOccupationCamera:
         places_occupees = compter_places_occupees(boites_personnes)
         return places_occupees, boites_personnes
 
-    def stream(self, capture_video, intervalle=1.0, duree=None, chemin_csv=None, afficher=False):
+    def stream(self, capture_video, intervalle=1.0, duree=None, chemin_csv=None, afficher=False, backend_url=None):
         """
         Boucle de capture + detection en continu, image par image.
 
@@ -97,6 +119,9 @@ class CapteurOccupationCamera:
         afficher      : afficher une fenetre video (necessite un
                         environnement graphique, ne fonctionne pas sur un
                         serveur sans ecran)
+        backend_url   : URL du backend SmartWaiting (ex: http://localhost:8000)
+                        Si fournie, chaque detection est envoyee via POST
+                        a {backend_url}/api/occupancy/ en plus du CSV.
         """
         redacteur_csv = None
         fichier_csv = None
@@ -134,6 +159,9 @@ class CapteurOccupationCamera:
                     redacteur_csv.writerow([horodatage, places_occupees])
                     fichier_csv.flush()
 
+                if backend_url:
+                    _envoyer_au_backend(backend_url, places_occupees)
+
                 if afficher and cv2:
                     cv2.imshow("Camera occupancy", image)
                     # Permet de fermer la fenetre proprement en appuyant sur "q"
@@ -168,6 +196,8 @@ def main():
     analyseur.add_argument("--duration", type=float, default=None, help="Duree totale (s), infini si non precise")
     analyseur.add_argument("--csv", type=str, default="occupation_camera.csv", help="Fichier CSV de sortie")
     analyseur.add_argument("--show", action="store_true", help="Afficher la fenetre video annotee")
+    analyseur.add_argument("--backend-url", type=str, default=None,
+                           help="URL du backend SmartWaiting (ex: http://localhost:8000) pour envoyer les resultats en temps reel")
     arguments = analyseur.parse_args()
 
     import cv2
@@ -185,6 +215,7 @@ def main():
         duree=arguments.duration,
         chemin_csv=arguments.csv,
         afficher=arguments.show,
+        backend_url=arguments.backend_url,
     )
     capture_video.release()
 

@@ -46,7 +46,7 @@ def receive_sensor(payload: OccupancyInput, db: Session = Depends(get_db)):
     reading = OccupancyReading(
         occupied_count=payload.occupied_chairs,
         patient_position=payload.patient_position,
-        source="sensor",
+        source=payload.source or "sensor",
         timestamp=datetime.now(),
     )
     db.add(reading)

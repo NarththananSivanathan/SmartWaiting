@@ -56,3 +56,25 @@ export async function analyserImage(file: File) {
   if (!res.ok) throw new Error("Erreur lors de l'analyse de l'image");
   return res.json();
 }
+
+export async function sendSensorData(occupiedChairs: number, source: "sensor" | "camera" = "sensor", patientPosition?: number) {
+  const res = await fetch(`${API_URL}/api/occupancy/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ occupied_chairs: occupiedChairs, source, patient_position: patientPosition }),
+  });
+  if (!res.ok) throw new Error("Erreur lors de l'envoi des données capteur");
+  return res.json();
+}
+
+export async function fetchLatestOccupancy() {
+  const res = await fetch(`${API_URL}/api/occupancy/latest`);
+  if (!res.ok) throw new Error("Aucune donnée d'occupation disponible");
+  return res.json();
+}
+
+export async function checkHealth() {
+  const res = await fetch(`${API_URL}/health`);
+  if (!res.ok) throw new Error("Backend indisponible");
+  return res.json();
+}
