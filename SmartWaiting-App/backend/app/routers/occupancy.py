@@ -7,7 +7,7 @@ import httpx
 
 from ..database import get_db
 from ..models import OccupancyReading, Consultation
-from ..schemas import OccupancyInput, OccupancyReadingResponse, WaitingTimeResponse
+from ..schemas import OccupancyInput, OccupancyReadingResponse, WaitingTimeResponse, VideoAnalysisResponse
 from ..config import settings
 
 router = APIRouter(prefix="/occupancy", tags=["occupancy"])
@@ -100,6 +100,46 @@ async def analyser_image_yolo(image: UploadFile = File(...), db: Session = Depen
         saison_annee=ia["saison_annee"],
         source_occupancy="yolo",
         timestamp=reading.timestamp,
+    )
+
+
+@router.post("/analyser-video", response_model=VideoAnalysisResponse, status_code=201)
+async def analyser_video_yolo(
+    video: UploadFile = File(...),
+    intervalle_frames: int = 30,
+    db: Session = Depends(get_db),
+):
+    contenu = await video.read()
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        try:
+            response = await client.post(
+                f"{settings.YOLO_API_URL}/analyser-video",
+                files={"video": (video.filename, contenu, video.content_type)},
+                params={"intervalle_frames": intervalle_frames},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"Erreur service YOLO : {str(e)}")
+
+    yolo_data = response.json()
+    moyenne = yolo_data["moyenne_occupied"]
+
+    reading = OccupancyReading(
+        occupied_count=int(round(moyenne)),
+        patient_position=None,
+        source="yolo",
+        timestamp=datetime.now(),
+    )
+    db.add(reading)
+    db.commit()
+
+    return VideoAnalysisResponse(
+        resultats=yolo_data["resultats"],
+        moyenne_occupied=moyenne,
+        nb_frames_analysees=yolo_data["nb_frames_analysees"],
+        timestamp=reading.timestamp,
+        source_occupancy="yolo-video",
     )
 
 

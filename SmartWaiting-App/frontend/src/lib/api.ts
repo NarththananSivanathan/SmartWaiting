@@ -78,3 +78,14 @@ export async function checkHealth() {
   if (!res.ok) throw new Error("Backend indisponible");
   return res.json();
 }
+
+export async function analyserVideo(file: File, intervalleFrames = 30) {
+  const form = new FormData();
+  form.append("video", file);
+  const res = await fetch(`${API_URL}/api/occupancy/analyser-video?intervalle_frames=${intervalleFrames}`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error("Erreur lors de l'analyse vidéo");
+  return res.json();
+}
