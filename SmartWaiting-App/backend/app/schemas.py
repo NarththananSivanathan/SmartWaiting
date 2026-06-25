@@ -39,6 +39,7 @@ class OccupancyInput(BaseModel):
     free_chairs: Optional[int] = None
     occupancy_rate: Optional[float] = None
     patient_position: Optional[int] = None
+    source: Optional[str] = None  # "sensor", "camera", "yolo" — "sensor" par défaut
 
 class OccupancyReadingResponse(ORMBase):
     id: int
@@ -70,3 +71,16 @@ class WaitingTimeResponse(BaseModel):
     saison_annee: str
     source_occupancy: str
     timestamp: datetime
+
+
+class VideoFrameResult(BaseModel):
+    frame: int
+    temps_secondes: float
+    occupied_count: int
+
+class VideoAnalysisResponse(BaseModel):
+    resultats: List[VideoFrameResult]
+    moyenne_occupied: float
+    nb_frames_analysees: int
+    timestamp: datetime
+    source_occupancy: str = "yolo-video"

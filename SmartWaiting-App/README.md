@@ -25,7 +25,11 @@ SmartWaiting-App/
 │   │   ├── app/
 │   │   │   ├── page.tsx         # Page consultations (médecin)
 │   │   │   ├── attente/
-│   │   │   │   └── page.tsx     # Page salle d'attente (patient)
+│   │   │   │   └── page.tsx     # Page salle d'attente + upload image/vidéo YOLO
+│   │   │   ├── webcam/
+│   │   │   │   └── page.tsx     # Détection en direct via webcam
+│   │   │   ├── test/
+│   │   │   │   └── page.tsx     # Page de test de tous les endpoints API
 │   │   │   ├── layout.tsx       # Layout global
 │   │   │   └── globals.css      # Styles globaux
 │   │   └── lib/
@@ -57,14 +61,14 @@ Enregistre chaque consultation médicale. Alimentée par le médecin via la page
 
 ### Table `occupancy_readings`
 
-Enregistre chaque mesure d'occupation reçue, qu'elle vienne du capteur IoT ou de l'analyse YOLO.
+Enregistre chaque mesure d'occupation reçue, quelle que soit la source.
 
 | Colonne | Type | Description |
 |---------|------|-------------|
 | `id` | INT | Identifiant auto-incrémenté |
 | `occupied_count` | INT | Nombre de places occupées détectées |
-| `patient_position` | INT | Position du prochain patient dans la file |
-| `source` | VARCHAR | `"sensor"` (IoT) ou `"yolo"` (caméra) |
+| `patient_position` | INT | Position du prochain patient dans la file (optionnel) |
+| `source` | VARCHAR | `"sensor"` (IoT), `"camera"` (script caméra), `"yolo"` (image/vidéo uploadée) |
 | `timestamp` | DATETIME | Horodatage de la mesure |
 
 ---
@@ -79,6 +83,7 @@ Enregistre chaque mesure d'occupation reçue, qu'elle vienne du capteur IoT ou d
 | `PATCH` | `/{id}/end` | Termine la consultation, calcule la durée |
 | `PATCH` | `/{id}/type` | Met à jour le type de rendez-vous |
 | `GET` | `/` | Liste paginée (`?page=1&size=20`) |
+| `GET` | `/stats` | Statistiques du jour (total, durée moyenne, durée par type) |
 | `GET` | `/{id}` | Détail d'une consultation |
 
 **Exemple — démarrer une consultation :**
@@ -103,10 +108,51 @@ curl -X POST http://localhost:8000/api/consultations/start \
 
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
-| `POST` | `/` | Reçoit les données du capteur IoT |
-| `POST` | `/analyser` | Reçoit une image → YOLO détecte → IA prédit |
+| `POST` | `/` | Reçoit les données d'un capteur (IoT, caméra script…) |
+| `POST` | `/analyser` | Reçoit une image → YOLO détecte les personnes → IA prédit le temps d'attente |
+| `POST` | `/analyser-video` | Reçoit une vidéo → YOLO analyse frame par frame → retourne occupation par frame + moyenne |
 | `GET` | `/waiting-time` | Temps d'attente estimé (lit dernière mesure + appelle IA) |
 | `GET` | `/latest` | Dernière mesure d'occupation brute |
+
+**Champ `source` sur `POST /` :**
+
+Le capteur peut préciser sa source pour la traçabilité :
+```bash
+# Capteur IoT (défaut si source absente)
+curl -X POST http://localhost:8000/api/occupancy/ \
+  -H "Content-Type: application/json" \
+  -d '{"occupied_chairs": 5, "source": "sensor"}'
+
+# Script caméra YOLO (camera_occupancy_sensor.py avec --backend-url)
+curl -X POST http://localhost:8000/api/occupancy/ \
+  -H "Content-Type: application/json" \
+  -d '{"occupied_chairs": 3, "source": "camera"}'
+```
+
+**Exemple — analyse d'une image :**
+```bash
+curl -X POST -F "image=@salle.jpg" http://localhost:8000/api/occupancy/analyser
+```
+
+**Exemple — analyse d'une vidéo :**
+```bash
+# intervalle_frames=30 → analyse 1 frame toutes les 30 frames (~1/s à 30fps)
+curl -X POST -F "video=@salle.mp4" \
+  "http://localhost:8000/api/occupancy/analyser-video?intervalle_frames=30"
+```
+```json
+{
+  "resultats": [
+    {"frame": 0,  "temps_secondes": 0.0,  "occupied_count": 3},
+    {"frame": 30, "temps_secondes": 1.0,  "occupied_count": 4},
+    {"frame": 60, "temps_secondes": 2.0,  "occupied_count": 4}
+  ],
+  "moyenne_occupied": 3.7,
+  "nb_frames_analysees": 3,
+  "timestamp": "2026-06-24T10:00:00",
+  "source_occupancy": "yolo-video"
+}
+```
 
 **Exemple — temps d'attente :**
 ```bash
@@ -123,7 +169,7 @@ curl http://localhost:8000/api/occupancy/waiting-time
   "jour_semaine": "Mardi",
   "saison_annee": "Été",
   "source_occupancy": "sensor",
-  "timestamp": "2026-06-23T10:00:00"
+  "timestamp": "2026-06-24T10:00:00"
 }
 ```
 
@@ -139,30 +185,33 @@ curl http://localhost:8000/api/occupancy/waiting-time
 ## Flux de données
 
 ```
-Capteur IoT
-    │  POST /api/occupancy/
+Capteur IoT / Script caméra (camera_occupancy_sensor.py --backend-url)
+    │  POST /api/occupancy/   {"occupied_chairs": N, "source": "sensor"|"camera"}
     ▼
 Backend ──── INSERT ────▶ MySQL (occupancy_readings)
 
-Caméra (image JPEG)
+Image JPEG (frontend /attente ou /webcam)
     │  POST /api/occupancy/analyser
     ▼
-Backend ──── appelle ───▶ SmartWaiting-YOLO (détection personnes)
+Backend ──── appelle ───▶ SmartWaiting-YOLO POST /analyser
     │                              │
     │         occupied_count ◀─────┘
-    │
-    ├── INSERT ────▶ MySQL (occupancy_readings, source="yolo")
-    └── appelle ───▶ SmartWaiting-IA (prédiction temps d'attente)
-                              │
-              WaitingTimeResponse ◀────┘
+    ├── INSERT ────▶ MySQL (source="yolo")
+    └── appelle ───▶ SmartWaiting-IA → WaitingTimeResponse
+
+Vidéo MP4 (frontend /attente)
+    │  POST /api/occupancy/analyser-video?intervalle_frames=30
+    ▼
+Backend ──── appelle ───▶ SmartWaiting-YOLO POST /analyser-video
+    │                              │
+    │    {resultats[], moyenne} ◀──┘
+    ├── INSERT ────▶ MySQL (moyenne arrondie, source="yolo")
+    └── VideoAnalysisResponse ────▶ Frontend
 
 Frontend (patient) — GET /api/occupancy/waiting-time
     ▼
 Backend ──── SELECT ────▶ MySQL (dernière mesure)
-    │
-    └── appelle ───▶ SmartWaiting-IA (prédiction à la demande)
-                              │
-              WaitingTimeResponse ◀────┘
+    └── appelle ───▶ SmartWaiting-IA → WaitingTimeResponse
 ```
 
 ---
@@ -174,13 +223,39 @@ Backend ──── SELECT ────▶ MySQL (dernière mesure)
 - Démarrer / terminer une consultation
 - Choisir le type de rendez-vous
 - Voir l'historique paginé des consultations
+- Navigation vers la salle d'attente, la webcam et les tests API
 
 ### Page `/attente` — Affichage patient
 
 - Position dans la file d'attente
 - Temps d'attente estimé (mis à jour toutes les 30 secondes)
 - Heure de passage estimée
-- Upload d'une image pour analyse YOLO en direct
+- Statistiques du jour par type de consultation
+- Upload d'une **image** pour analyse YOLO
+- Upload d'une **vidéo** pour analyse YOLO frame par frame (avec tableau de résultats)
+
+### Page `/webcam` — Détection webcam en direct
+
+- Accès à la webcam du navigateur (`getUserMedia`)
+- Capture automatique toutes les N secondes (configurable)
+- Capture manuelle à la demande
+- Résultats en overlay sur le flux vidéo
+- Historique des 30 dernières détections + mini graphique
+- Utilise l'endpoint `POST /api/occupancy/analyser` (même que l'upload image)
+
+### Page `/test` — Tests API
+
+Page dédiée aux développeurs pour tester tous les endpoints sans outil externe :
+
+| Section | Endpoint testé |
+|---------|----------------|
+| Santé backend | `GET /health` |
+| Envoyer données capteur | `POST /api/occupancy/` (choix de la source) |
+| Dernière lecture | `GET /api/occupancy/latest` |
+| Temps d'attente | `GET /api/occupancy/waiting-time` |
+| Analyse image YOLO | `POST /api/occupancy/analyser` |
+| Analyse vidéo YOLO | `POST /api/occupancy/analyser-video` |
+| Consultation start/end | `POST` + `PATCH /api/consultations/` |
 
 ---
 

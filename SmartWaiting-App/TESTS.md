@@ -39,7 +39,7 @@ docker exec SmartWaiting-Backend python -m pytest tests/test_occupancy.py -v
 ### Un seul test
 
 ```bash
-docker exec SmartWaiting-Backend python -m pytest tests/test_consultations.py::test_end_consultation -v
+docker exec SmartWaiting-Backend python -m pytest tests/test_occupancy.py::test_analyser_video_retourne_resultats -v
 ```
 
 ---
@@ -52,7 +52,7 @@ backend/
 │   ├── __init__.py
 │   ├── conftest.py              # Configuration partagée (DB, client HTTP)
 │   ├── test_consultations.py   # 15 tests — router /api/consultations
-│   └── test_occupancy.py       #  9 tests — router /api/occupancy
+│   └── test_occupancy.py       # 17 tests — router /api/occupancy
 └── requirements-test.txt       # Dépendances de test (pytest)
 ```
 
@@ -120,7 +120,7 @@ Test démarre → transaction ouverte → test s'exécute → transaction annul�
 
 ---
 
-## tests/test_occupancy.py — 9 tests
+## tests/test_occupancy.py — 17 tests
 
 ### POST /api/occupancy/
 
@@ -128,6 +128,9 @@ Test démarre → transaction ouverte → test s'exécute → transaction annul�
 |------|--------------------|
 | `test_receive_sensor` | La mesure est stockée avec `source="sensor"`, `occupied_count` et `patient_position` corrects |
 | `test_receive_sensor_sans_position` | `patient_position` est optionnel, peut être `null` |
+| `test_receive_sensor_source_defaut` | Sans champ `source`, la valeur par défaut est `"sensor"` |
+| `test_receive_sensor_source_camera` | `source="camera"` (envoyé par le script caméra) est bien stocké tel quel |
+| `test_receive_sensor_source_yolo` | `source="yolo"` est accepté et stocké correctement |
 
 ### GET /api/occupancy/latest
 
@@ -145,13 +148,23 @@ Test démarre → transaction ouverte → test s'exécute → transaction annul�
 | `test_waiting_time_utilise_la_plus_recente` | Utilise bien la mesure la plus récente, pas la première |
 | `test_waiting_time_position_fallback` | Si `patient_position` est `null`, utilise `occupied_count` comme position |
 | `test_waiting_time_ia_erreur` | Retourne **502** si le service IA est indisponible |
+| `test_waiting_time_source_camera` | `source_occupancy="camera"` est bien reflété dans la réponse |
+
+### POST /api/occupancy/analyser-video
+
+| Test | Ce qui est vérifié |
+|------|--------------------|
+| `test_analyser_video_retourne_resultats` | Appelle le service YOLO (mocké), retourne la liste des frames et la moyenne |
+| `test_analyser_video_stocke_en_base` | La moyenne arrondie est insérée en base avec `source="yolo"`, vérifiable via `/latest` |
+| `test_analyser_video_yolo_indisponible` | Retourne **502** si le service YOLO est inaccessible |
+| `test_analyser_video_resultats_par_frame` | Chaque élément de `resultats` contient `frame`, `temps_secondes` et `occupied_count` |
 
 ---
 
 ## Résultat attendu
 
 ```
-======================== 24 passed in 0.15s =========================
+======================== 32 passed in 0.15s =========================
 ```
 
 ---
